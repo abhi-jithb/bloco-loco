@@ -1,5 +1,4 @@
-// Gemini API Logic (Integrated for Edge Compatibility)
-const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
+const API_URL ="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
 async function categorizeSite(title, url, apiKey) {
   if (!apiKey) throw new Error("API Key is missing");
