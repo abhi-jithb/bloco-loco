@@ -11,10 +11,20 @@ A powerful browser extension that uses Google's Gemini AI to categorize your bro
     *   **Block by Site**: Block entire domains (e.g., `youtube.com`).
 *   **Privacy Focused**: Your API key is stored locally on your device.
 
-# Screenshots : 
-<img width="368" height="472" alt="image" src="https://github.com/user-attachments/assets/c35bf0da-4895-491e-a375-15c1c439b41e" />
-<img width="370" height="641" alt="image" src="https://github.com/user-attachments/assets/48bdb264-8f5d-4b1b-934c-045804572228" />
-<img width="374" height="477" alt="image" src="https://github.com/user-attachments/assets/7ce2c865-5ff8-4b15-bbd1-cfe5d6f0922e" />
+# Screenshots
+
+## Screenshot 1
+<img width="368" height="472" alt="Screenshot 1" src="https://github.com/user-attachments/assets/c35bf0da-4895-491e-a375-15c1c439b41e" />
+
+---
+
+## Screenshot 2
+<img width="370" height="641" alt="Screenshot 2" src="https://github.com/user-attachments/assets/48bdb264-8f5d-4b1b-934c-045804572228" />
+
+---
+
+## Screenshot 3
+<img width="374" height="477" alt="Screenshot 3" src="https://github.com/user-attachments/assets/7ce2c865-5ff8-4b15-bbd1-cfe5d6f0922e" />
 
 
 ## 🚀 Installation Guide
