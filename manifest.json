@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Smart History Blocker",
+  "name": "Bloco-Loco ",
   "version": "1.0",
   "description": "Categorize history with Gemini and block content by category or title.",
   "permissions": [

@@ -1,46 +1,124 @@
-const API_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-pro:generateContent";
+const API_URL =
+  "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent";
 
+/* -------------------- Domain Overrides -------------------- */
+
+const DOMAIN_CATEGORY_MAP = {
+  "facebook.com": "Social Media",
+  "instagram.com": "Social Media",
+  "youtube.com": "Entertainment",
+  "twitter.com": "Social Media",
+  "x.com": "Social Media",
+  "linkedin.com": "Social Media",
+  "discord.com": "Social Media",
+  "poki.com": "Gaming",
+  "crazygames.com": "Gaming",
+  "miniclip.com": "Gaming"
+};
+
+const VALID_CATEGORIES = [
+  "Education",
+  "Entertainment",
+  "Social Media",
+  "Shopping",
+  "News",
+  "Adult",
+  "Gaming",
+  "Sports",
+  "Finance",
+  "Coding",
+  "AI Tools",
+  "Productivity",
+  "Health",
+  "Travel",
+  "Food",
+  "Other"
+];
+
+
+function detectSearchIntent(url) {
+  try {
+    const u = new URL(url);
+
+    // Google / Bing / DuckDuckGo
+    if (
+      u.hostname.includes("google.") ||
+      u.hostname.includes("bing.com") ||
+      u.hostname.includes("duckduckgo.com")
+    ) {
+      const query =
+        u.searchParams.get("q") ||
+        u.searchParams.get("query") ||
+        "";
+
+      const q = query.toLowerCase();
+
+      if (/python|java|javascript|coding|programming|developer|react|node|flutter/.test(q)) {
+        return "Coding";
+      }
+
+      if (/ai|artificial intelligence|chatgpt|llm|machine learning|deep learning/.test(q)) {
+        return "AI Tools";
+      }
+
+      if (/study|education|course|tutorial|learn|college|exam/.test(q)) {
+        return "Education";
+      }
+
+      if (/money|finance|investment|crypto|stock|trading/.test(q)) {
+        return "Finance";
+      }
+
+      if (/health|fitness|diet|exercise|mental/.test(q)) {
+        return "Health";
+      }
+
+      if (/productivity|time management|focus|habits/.test(q)) {
+        return "Productivity";
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
+/* -------------------- Gemini Categorization -------------------- */
 
 async function categorizeSite(title, url, apiKey) {
-  if (!apiKey) throw new Error("API Key is missing");
+  if (!url || url.startsWith("chrome")) return "Other";
+
+  const hostname = new URL(url).hostname.replace("www.", "");
+  for (const domain in DOMAIN_CATEGORY_MAP) {
+    if (hostname.endsWith(domain)) {
+      return DOMAIN_CATEGORY_MAP[domain];
+    }
+  }
+
+  // 2️⃣ 🔥 Search intent detection (NEW)
+  const intentCategory = detectSearchIntent(url);
+  if (intentCategory) {
+    return intentCategory;
+  }
+  if (!apiKey) return "Other";
+
 
   const prompt = `
 You are a strict classification engine.
-Your job is to assign the browser history title into exactly one category from the list below.
+Return exactly ONE category from the list below:
 
-Allowed Categories :
-Education
-Entertainment
-Social Media
-Shopping
-News
-Adult
-Gaming
-Sports
-Finance
-Coding / Programming
-AI Tools
-Productivity
-Health
-Travel
-Food
-Other
+${VALID_CATEGORIES.join("\n")}
 
-Instructions:
-- Always respond with only the category name, nothing else.
-- If the title doesn’t clearly belong to any category, return “Other”.
-- Do not invent new categories.
-- Interpret the user’s intent behind the title when needed.
-- Stay consistent across similar titles.
+Rules:
+- Return only the category name
+- No explanations
+- No extra text
 
-Website Title: "${title}"
-Website URL: "${url}"
-
-Output: Return only one category from the list.
+Title: "${title}"
+URL: "${url}"
 `;
 
   try {
-    const response = await fetch(`${API_URL}?key=${apiKey}`, {
+    const res = await fetch(`${API_URL}?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -48,205 +126,187 @@ Output: Return only one category from the list.
       })
     });
 
-    if (!response.ok) {
-      console.error("Gemini API Error Status:", response.status);
-      return "Others";
-    }
+    if (!res.ok) return "Other";
 
-    const data = await response.json();
-    const category = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    const data = await res.json();
+    let category = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
-    const validCategories = [
-      "Education", "Entertainment", "Gaming", "News", "Social Media",
-      "Adult", "Sports", "Shopping", "Coding", "Productivity", "Finance",
-      "AI Tools", "Health", "Travel", "Food", "Others"
-    ];
+    if (category === "Coding / Programming") category = "Coding";
+    if (!VALID_CATEGORIES.includes(category)) return "Other";
 
-    let normalized = category;
-    if (normalized === "Coding / Programming") normalized = "Coding";
-    if (normalized === "Other") normalized = "Others";
+    return category;
 
-    const match = validCategories.find(c => c.toLowerCase() === normalized?.toLowerCase());
-    return match || "Others";
-
-  } catch (error) {
-    console.error("Gemini API Exception:", error);
-    return "Others";
+  } catch {
+    return "Other";
   }
 }
 
-// State
-let apiKey = null;
-let blockedCategories = {}; 
-let blockedTitles = []; 
-let blockedSites = [];
-let titleCache = {}; 
-let bypassList = {}; // { tabId: timestamp }
+/* -------------------- State -------------------- */
 
-// Initialize State
-function loadState() {
-  chrome.storage.local.get(['apiKey', 'blockedCategories', 'blockedTitles', 'blockedSites', 'titleCache'], (result) => {
-    apiKey = result.apiKey;
-    blockedCategories = result.blockedCategories || {};
-    blockedTitles = result.blockedTitles || [];
-    blockedSites = result.blockedSites || [];
-    titleCache = result.titleCache || {};
-    console.log("State loaded:", { blockedCategories, blockedTitles, blockedSites });
-  });
+let apiKey = null;
+let blockedCategories = {};
+let blockedTitles = [];
+let blockedSites = [];
+let domainCache = {};
+let bypassList = {};
+
+/* -------------------- Initial Load -------------------- */
+
+function loadInitialState() {
+  chrome.storage.local.get(
+    ["apiKey", "blockedCategories", "blockedTitles", "blockedSites", "domainCache"],
+    (res) => {
+      apiKey = res.apiKey || null;
+      blockedCategories = res.blockedCategories || {};
+      blockedTitles = res.blockedTitles || [];
+      blockedSites = res.blockedSites || [];
+      domainCache = res.domainCache || {};
+      console.log("Initial state loaded");
+    }
+  );
 }
 
-loadState();
+loadInitialState();
 
-// Keep state in sync
+/* -------------------- Storage Sync -------------------- */
+
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local') {
-    if (changes.apiKey) apiKey = changes.apiKey.newValue;
-    if (changes.blockedCategories) blockedCategories = changes.blockedCategories.newValue || {};
-    if (changes.blockedTitles) blockedTitles = changes.blockedTitles.newValue || [];
-    if (changes.blockedSites) blockedSites = changes.blockedSites.newValue || [];
-    if (changes.titleCache) titleCache = changes.titleCache.newValue || {};
-    console.log("State updated");
+  if (area !== "local") return;
+
+  if (changes.apiKey) apiKey = changes.apiKey.newValue;
+  if (changes.blockedCategories) blockedCategories = changes.blockedCategories.newValue || {};
+  if (changes.blockedTitles) blockedTitles = changes.blockedTitles.newValue || [];
+  if (changes.blockedSites) blockedSites = changes.blockedSites.newValue || [];
+  if (changes.domainCache) domainCache = changes.domainCache.newValue || {};
+
+  // 🔥 Re-check all tabs when categories change
+  if (changes.blockedCategories) {
+    chrome.tabs.query({}, tabs => {
+      tabs.forEach(tab => {
+        if (tab.id && tab.url) {
+          checkAndBlock(tab.id, tab);
+        }
+      });
+    });
   }
 });
 
-// Message Handling
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'setApiKey') {
-    apiKey = request.key;
+/* -------------------- Messages -------------------- */
+
+chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
+  if (req.action === "setApiKey") {
+    apiKey = req.key;
     chrome.storage.local.set({ apiKey });
     sendResponse({ success: true });
-  } else if (request.action === 'categorizeHistory') {
-    processHistory(request.days).then(sendResponse);
-    return true; // Async response
-  } else if (request.action === 'addBypass') {
-    // Add bypass for 5 minutes
-    if (sender.tab) {
-        bypassList[sender.tab.id] = Date.now() + 5 * 60 * 1000;
-        sendResponse({ success: true });
-    }
+  }
+
+  if (req.action === "categorizeHistory") {
+    processHistory(req.days).then(sendResponse);
+    return true;
+  }
+
+  if (req.action === "addBypass" && sender.tab) {
+    bypassList[sender.tab.id] = Date.now() + 5 * 60 * 1000;
+    sendResponse({ success: true });
   }
 });
+
+/* -------------------- History Categorization -------------------- */
 
 async function processHistory(days) {
   if (!apiKey) return { error: "No API Key" };
 
-  const msPerDay = 1000 * 60 * 60 * 24;
-  const startTime = Date.now() - (days * msPerDay);
+  const startTime = Date.now() - days * 24 * 60 * 60 * 1000;
 
-  const historyItems = await chrome.history.search({
-    text: '',
-    startTime: startTime,
-    maxResults: 50 // Limit to avoid hitting rate limits too fast in demo
+  const history = await chrome.history.search({
+    text: "",
+    startTime,
+    maxResults: 50
   });
 
-  const results = [];
-  let cacheUpdates = {};
-  let hasUpdates = false;
+  let updated = false;
 
-  for (const item of historyItems) {
-    if (!item.title) continue;
-    
-    // Skip internal extension pages
-    if (item.title === "Page Blocked" || item.url.startsWith("chrome-extension://")) continue;
+  for (const item of history) {
+    if (!item.url || item.url.startsWith("chrome")) continue;
 
-    let category = titleCache[item.title];
-    
-    if (!category) {
-      // Simple rate limiting: wait 500ms between calls
-      await new Promise(r => setTimeout(r, 500));
-      
-      try {
-        category = await categorizeSite(item.title, item.url, apiKey);
-        cacheUpdates[item.title] = category;
-        titleCache[item.title] = category; 
-        hasUpdates = true;
-      } catch (err) {
-        console.error(`Failed to categorize ${item.title}:`, err);
-        category = "Others"; // Fallback
-      }
+    const domain = new URL(item.url).hostname;
+    if (!domainCache[domain]) {
+      const category = await categorizeSite(item.title, item.url, apiKey);
+      domainCache[domain] = category;
+      updated = true;
     }
-
-    results.push({
-      title: item.title,
-      url: item.url,
-      category: category
-    });
   }
 
-  if (hasUpdates) {
-    chrome.storage.local.set({ titleCache: { ...titleCache, ...cacheUpdates } });
+  if (updated) {
+    chrome.storage.local.set({ domainCache });
   }
-  
-  return { items: results };
+
+  return { success: true };
 }
 
-// Blocking Logic
+/* -------------------- Blocking -------------------- */
 
-// 1. Fast Site Blocking (webNavigation)
+// Fast navigation block
 chrome.webNavigation.onBeforeNavigate.addListener((details) => {
-  if (details.frameId !== 0) return; // Only main frame
-  
+  if (details.frameId !== 0) return;
+
   const url = details.url;
-  if (!url || url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('edge://')) return;
+  if (!url || url.startsWith("chrome")) return;
+  if (bypassList[details.tabId] > Date.now()) return;
 
-  // Check Bypass
-  if (bypassList[details.tabId] && bypassList[details.tabId] > Date.now()) return;
+  const domain = new URL(url).hostname;
 
-  // Block by Site (Domain/URL)
-  const matchedSite = blockedSites.find(site => site && url.toLowerCase().includes(site.toLowerCase()));
-  if (matchedSite) {
-    console.log(`Blocking site: ${url} matched ${matchedSite}`);
-    chrome.tabs.update(details.tabId, {
-      url: chrome.runtime.getURL(`block.html?reason=${encodeURIComponent("Site Blocked")}&detected=${encodeURIComponent(matchedSite)}`)
-    });
+  if (blockedSites.some(s => url.includes(s))) {
+    blockTab(details.tabId, "Site Blocked", domain);
+    return;
+  }
+
+  const category = domainCache[domain];
+  if (category && blockedCategories[category]) {
+    blockTab(details.tabId, "Category Blocked", category);
   }
 });
 
-// 2. Title & Category Blocking (tabs.onUpdated)
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' || changeInfo.title) {
+// SPA / title updates
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (info.status === "complete") {
     checkAndBlock(tabId, tab);
   }
 });
 
 async function checkAndBlock(tabId, tab) {
-  if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('edge://')) return;
+  if (!tab.url || tab.url.startsWith("chrome")) return;
+  if (bypassList[tabId] > Date.now()) return;
 
-  // Check Bypass
-  if (bypassList[tabId] && bypassList[tabId] > Date.now()) return;
-
+  const domain = new URL(tab.url).hostname;
   const title = tab.title || "";
-  const url = tab.url || "";
-  
-  // Block by Specific Title (Partial Match)
-  const lowerTitle = title.toLowerCase();
-  const matchedTitle = blockedTitles.find(blocked => blocked && lowerTitle.includes(blocked.toLowerCase()));
 
+  const matchedTitle = blockedTitles.find(t =>
+    title.toLowerCase().includes(t.toLowerCase())
+  );
   if (matchedTitle) {
-    blockTab(tabId, `Title Blocked: "${matchedTitle}"`, title);
+    blockTab(tabId, "Title Blocked", matchedTitle);
     return;
   }
 
-  // Block by Category
-  let category = titleCache[title];
-  
-  if (!category && apiKey && title) {
-    // Try to categorize on the fly
-    try {
-        category = await categorizeSite(title, url, apiKey);
-        titleCache[title] = category;
-        chrome.storage.local.set({ titleCache });
-    } catch (e) {
-        console.error(e);
-    }
+  let category = domainCache[domain];
+  if (!category && apiKey) {
+    category = await categorizeSite(title, tab.url, apiKey);
+    domainCache[domain] = category;
+    chrome.storage.local.set({ domainCache });
   }
 
   if (category && blockedCategories[category]) {
-    blockTab(tabId, `Category Blocked: ${category}`, title);
+    blockTab(tabId, "Category Blocked", category);
   }
 }
 
-function blockTab(tabId, reason, detectedValue) {
-  const blockUrl = chrome.runtime.getURL(`block.html?reason=${encodeURIComponent(reason)}&detected=${encodeURIComponent(detectedValue)}`);
-  chrome.tabs.update(tabId, { url: blockUrl });
+/* -------------------- Block Page -------------------- */
+
+function blockTab(tabId, reason, detected) {
+  chrome.tabs.update(tabId, {
+    url: chrome.runtime.getURL(
+      `block.html?reason=${encodeURIComponent(reason)}&detected=${encodeURIComponent(detected)}`
+    )
+  });
 }
