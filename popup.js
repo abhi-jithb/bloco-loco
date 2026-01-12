@@ -24,7 +24,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const addBlockSiteBtn = document.getElementById('addBlockSiteBtn');
   const blockedSitesList = document.getElementById('blockedSitesList');
 
-  const ALL_CATEGORIES = ["Education", "Entertainment", "Gaming", "News", "Social Media", "Adult", "Sports", "Shopping", "Coding", "Productivity", "Others"];
+  const ALL_CATEGORIES = [
+  "Education",
+  "Entertainment",
+  "Gaming",
+  "Social Media",
+  "Shopping",
+  "News",
+  "Adult",
+  "Sports",
+  "Finance",
+  "Coding",
+  "AI Tools",
+  "Productivity",
+  "Health",
+  "Travel",
+  "Food",
+  "Other" 
+];
 
   // Check API Key
   chrome.storage.local.get(['apiKey', 'blockedCategories', 'blockedTitles', 'blockedSites'], (result) => {
